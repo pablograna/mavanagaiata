@@ -13,9 +13,9 @@
                              http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.github.koraktor</groupId>
+    <groupId>com.55social</groupId>
     <artifactId>mavanagaiata</artifactId>
-    <version>0.3.3</version>
+    <version>0.3.5</version>
     <packaging>maven-plugin</packaging>
 
     <name>Mavanagaiata</name>
@@ -37,6 +37,14 @@
         <system>GitHub</system>
         <url>https://github.com/koraktor/mavanagaiata/issues</url>
     </issueManagement>
+
+    <!-- The location where deploy and site-deploy leaves the artifacts -->
+    <distributionManagement>
+        <repository>
+            <id>katari-release</id>
+            <url>scp://maven.55social.com/opt/55social/maven/katari</url>
+        </repository>
+    </distributionManagement>
 
     <developers>
         <developer>
@@ -169,6 +177,15 @@
                 </executions>
             </plugin>
         </plugins>
+
+        <extensions>
+            <extension>
+                <groupId>org.jvnet.wagon-svn</groupId>
+                <artifactId>wagon-svn</artifactId>
+                <version>1.12</version>
+            </extension>
+        </extensions>
+
     </build>
 
     <reporting>
