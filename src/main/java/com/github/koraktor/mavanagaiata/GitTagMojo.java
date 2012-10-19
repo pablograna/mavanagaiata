@@ -10,6 +10,8 @@ package com.github.koraktor.mavanagaiata;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.HashSet;
+import java.util.Set;
 
 import org.apache.maven.plugin.MojoExecutionException;
 
@@ -38,6 +40,13 @@ public class GitTagMojo extends AbstractGitMojo {
 
     private Map<RevCommit, String> tagCommits;
 
+    /** Stores the commit ids processed so far.
+     *
+     * This is used when finding the closest tag to a commit, to avoid
+     * processing the same 'branch' more than once.
+     */
+    private Set<String> commitsFound;
+
     /**
      * This will first read all tags and walk the commit hierarchy down from
      * HEAD until it finds one of the tags. The name of that tag is written
@@ -52,6 +61,7 @@ public class GitTagMojo extends AbstractGitMojo {
             this.revWalk = new RevWalk(this.repository);
             Map<String, Ref> tags = this.repository.getTags();
             this.tagCommits = new HashMap<RevCommit, String>();
+            this.commitsFound = new HashSet<String>();
 
             for(Map.Entry<String, Ref> tag : tags.entrySet()) {
                 try {
@@ -122,6 +132,12 @@ public class GitTagMojo extends AbstractGitMojo {
      */
     private int walkCommits(RevCommit commit, int distance) throws IOException {
         commit = (RevCommit) this.revWalk.peel(commit);
+
+        String sha1Id = commit.getId().toString();
+        if (commitsFound.contains(sha1Id)) {
+            return Integer.MAX_VALUE;
+        }
+        commitsFound.add(sha1Id);
 
         if(this.isTagged(commit)) {
             return distance;
