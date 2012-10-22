@@ -8,10 +8,12 @@
 package com.github.koraktor.mavanagaiata;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 import java.util.HashSet;
-import java.util.Set;
 
 import org.apache.maven.plugin.MojoExecutionException;
 
@@ -40,13 +42,6 @@ public class GitTagMojo extends AbstractGitMojo {
 
     private Map<RevCommit, String> tagCommits;
 
-    /** Stores the commit ids processed so far.
-     *
-     * This is used when finding the closest tag to a commit, to avoid
-     * processing the same 'branch' more than once.
-     */
-    private Set<String> commitsFound;
-
     /**
      * This will first read all tags and walk the commit hierarchy down from
      * HEAD until it finds one of the tags. The name of that tag is written
@@ -61,7 +56,6 @@ public class GitTagMojo extends AbstractGitMojo {
             this.revWalk = new RevWalk(this.repository);
             Map<String, Ref> tags = this.repository.getTags();
             this.tagCommits = new HashMap<RevCommit, String>();
-            this.commitsFound = new HashSet<String>();
 
             for(Map.Entry<String, Ref> tag : tags.entrySet()) {
                 try {
@@ -76,12 +70,13 @@ public class GitTagMojo extends AbstractGitMojo {
                 }
             }
 
+            int distance = -1;
+
             String abbrevId = this.repository.getObjectDatabase().newReader()
                 .abbreviate(head).name();
 
-            int distance;
             if(this.tagCommits.isEmpty() ||
-               (distance = this.walkCommits(head, 0)) < 0) {
+               (distance = this.findNearestTag()) < 0) {
                 this.addProperty("tag.describe", abbrevId);
                 this.addProperty("tag.name", "");
             } else {
@@ -97,8 +92,67 @@ public class GitTagMojo extends AbstractGitMojo {
         }
     }
 
+    /** Finds the 'closest' tag from head.
+     * 
+     * This performs a breadth first search in the commit tree from head, and
+     * updates the value of this.tag with the fist tag found. This is not
+     * exactly as what git describe does, but it is close enough.
+     * 
+     * This is much faster than the old recursive implementation because it
+     * considers much less commits.
+     * 
+     * @return The distance at which the tag has been found, or <code>-1</code>
+     *         if no tag is reachable from the given commit.
+     * @throws IOException
+     */
+    private int findNearestTag() throws IOException {
+	int currentDistance = -1;
+	
+	// Breadth-first search. We start with the head as the first node.
+	List<RevCommit> thisLevelCommits = new LinkedList<RevCommit>();
+	thisLevelCommits.add(this.getHead());
+	// The next list of 'siblings' to walk.
+	List<RevCommit> nextLevelCommits = new LinkedList<RevCommit>();
+	HashSet<String> seen = new HashSet<String>();
+	while (!thisLevelCommits.isEmpty()) {
+	    for (RevCommit revCommit : thisLevelCommits) {
+		currentDistance++;
+
+		String commitId = revCommit.getId().toString();
+		if (seen.contains(commitId)) {
+		    // Do not process seen commits again.
+		    continue;
+		}
+		seen.add(commitId);
+
+		RevCommit commit = (RevCommit) this.revWalk.peel(revCommit);
+
+		// Side effect: this sets the tag field if we found a commit.
+		isTagged(commit);
+		
+		RevCommit[] nextCommits = commit.getParents();
+		if (nextCommits != null) {
+		    nextLevelCommits.addAll(Arrays.asList(nextCommits));
+		}
+	    }
+	    if (this.tag == null) {
+		thisLevelCommits = nextLevelCommits;
+	    } else {
+		thisLevelCommits = new LinkedList<RevCommit>();
+	    }
+	    nextLevelCommits = new LinkedList<RevCommit>();
+	}
+
+	if (this.tag == null) {
+	    // We did not find the tag, just return -1.
+	    return -1;
+	} else {
+	    return currentDistance;
+	}
+    }
+
     /**
-     * Returns whether a specific commit has been tagged
+     * Returns whether a specific commit has been tagged.
      *
      * If the commit is tagged, the tag's name is saved as property "tag"
      *
@@ -114,46 +168,4 @@ public class GitTagMojo extends AbstractGitMojo {
 
         return false;
     }
-
-    /**
-     * Walks the hierarchy of commits beginning with the given commit
-     *
-     * This method is called recursively until a tagged commit is found or the
-     * last commit in the hierarchy is reached.
-     *
-     * @param commit The commit to start with
-     * @param distance The distance walked in the commit hierarchy
-     * @return The distance at which the tag has been found, or <code>-1</code>
-     *         if no tag is reachable from the given commit
-     * @see #isTagged(RevCommit)
-     * @see RevCommit#getParentCount()
-     * @see RevCommit#getParents()
-     * @throws IOException if an error occurred while reading a commit
-     */
-    private int walkCommits(RevCommit commit, int distance) throws IOException {
-        commit = (RevCommit) this.revWalk.peel(commit);
-
-        String sha1Id = commit.getId().toString();
-        if (commitsFound.contains(sha1Id)) {
-            return Integer.MAX_VALUE;
-        }
-        commitsFound.add(sha1Id);
-
-        if(this.isTagged(commit)) {
-            return distance;
-        }
-
-        int currentDistance = -1;
-        for(RevCommit parent : commit.getParents()) {
-            int tagDistance = this.walkCommits(parent, distance + 1);
-            if (currentDistance == -1) {
-                currentDistance = tagDistance;
-            } else if(-1 < tagDistance && tagDistance < currentDistance) {
-                currentDistance = tagDistance;
-            }
-        }
-
-        return currentDistance;
-    }
-
 }

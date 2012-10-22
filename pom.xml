@@ -15,7 +15,7 @@
 
     <groupId>com.55social</groupId>
     <artifactId>mavanagaiata</artifactId>
-    <version>0.3.5</version>
+    <version>0.3.6</version>
     <packaging>maven-plugin</packaging>
 
     <name>Mavanagaiata</name>
